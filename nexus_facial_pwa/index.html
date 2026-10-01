@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Nexus Access">
+  
+  <title>Nexus — Biometría Facial & Bluetooth</title>
+
+  <!-- PWA Manifest & Icons -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+
+  <!-- Tipografía Minimalista Apple / Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Face-API.js (Motor de Redes Neuronales TensorFlow para el Navegador) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+  
+  <!-- Lógica de la Aplicación -->
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- ── BARRA DE NAVEGACIÓN MINIMALISTA ── -->
+    <header class="nav-bar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">nexus<span class="brand-thin">.access</span></span>
+      </div>
+
+      <div class="header-actions">
+        <!-- Botón Bluetooth -->
+        <button id="btnBluetooth" class="btn-pill" title="Vincular cerradura ESP32 vía Web Bluetooth">
+          <svg class="icon-bt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>
+          </svg>
+          <span id="btStatusLabel">Conectar BLE</span>
+        </button>
+
+        <!-- Botón Menú de Usuarios -->
+        <button id="btnOpenUsers" class="btn-icon" title="Gestionar rostros autorizados">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span id="badgeUserCount" class="badge-count">0</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── VIEWPORT DE LA CÁMARA (ELEMENTO CENTRAL) ── -->
+    <main class="camera-stage">
+      <div class="camera-wrapper" id="cameraWrapper">
+        <video id="webcam" playsinline muted autoplay></video>
+        <canvas id="overlayCanvas"></canvas>
+
+        <!-- Retícula de escaneo / Mira biométrica -->
+        <div class="scan-reticle" id="scanReticle">
+          <div class="corner tl"></div>
+          <div class="corner tr"></div>
+          <div class="corner bl"></div>
+          <div class="corner br"></div>
+          <div class="scan-beam"></div>
+        </div>
+
+        <!-- Indicador de Inicialización de Modelos -->
+        <div id="loaderSplash" class="loader-splash">
+          <div class="spinner"></div>
+          <p id="loaderMessage">Cargando redes neuronales...</p>
+        </div>
+
+        <!-- Notificación Flotante (Toast) -->
+        <div id="feedbackToast" class="feedback-toast">
+          <span id="toastIcon"></span>
+          <span id="toastMessage">Sistema listo</span>
+        </div>
+      </div>
+
+      <!-- Barra de Estado Inferior -->
+      <div class="status-shelf">
+        <div class="status-indicator">
+          <div class="pulse-ring" id="statusPulse"></div>
+          <span class="status-text" id="statusText">Esperando rostro...</span>
+        </div>
+        <div class="status-meta">
+          <span id="cooldownTimer"></span>
+          <span id="fpsCounter">-- FPS</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── CONTROLES INFERIORES ── -->
+    <footer class="control-deck">
+      <button id="btnManualUnlock" class="btn-primary" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0"></path>
+        </svg>
+        <span>Abrir Cerradura</span>
+      </button>
+
+      <button id="btnRegisterFace" class="btn-secondary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span>Enrolar Rostro Actual</span>
+      </button>
+    </footer>
+
+  </div>
+
+  <!-- ── MODAL: GESTIÓN DE ROSTROS AUTORIZADOS ── -->
+  <div id="modalUsers" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Rostros Autorizados</h3>
+        <button id="btnCloseModal" class="btn-close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-hint">Los rostros se procesan y almacenan de forma 100% privada en la memoria local de tu dispositivo.</p>
+        <ul id="userList" class="user-list">
+          <li class="empty-state">No hay rostros registrados aún. Colócate frente a la cámara y pulsa "Enrolar Rostro Actual".</li>
+        </ul>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnClearAllUsers" class="btn-text-danger">Borrar todos</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: PROMPT PARA NOMBRE DE ROSTRO ── -->
+  <div id="modalPromptName" class="modal-backdrop">
+    <div class="modal-card modal-prompt">
+      <div class="modal-header">
+        <h3>Nuevo Usuario</h3>
+      </div>
+      <div class="modal-body">
+        <label for="inputUserName" class="input-label">Nombre de la persona:</label>
+        <input type="text" id="inputUserName" class="cyber-input" placeholder="Ej: Juan Pérez" maxlength="30" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelEnroll" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmEnroll" class="btn-primary">Guardar Rostro</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
